@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skywalking-rover
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: skywalking-rover
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: skywalking-rover
+subjects:
+  - kind: ServiceAccount
+    name: skywalking-rover
+    namespace: default
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: skywalking-rover
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services"]
+    verbs: ["get", "watch", "list"]
+---
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: skywalking-rover
+spec:
+  selector:
+    matchLabels:
+      name: skywalking-rover
+  template:
+    metadata:
+      labels:
+        name: skywalking-rover
+    spec:
+      serviceAccountName: skywalking-rover
+      serviceAccount: skywalking-rover
+      containers:
+        - name: skywalking-rover
+          # SkyWalking Rover image path
+          image: apache/skywalking-rover:0.3.0
+          imagePullPolicy: Always
+          securityContext:
+            capabilities:
+              add:
+                - SYS_PTRACE
+                - SYS_ADMIN
+            privileged: true
+          volumeMounts:
+            - name: host
+              mountPath: /host
+              readOnly: true
+          env:
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ACTIVE
+              value: "true"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: ROVER_BACKEND_ADDR
+              # backend OAP address
+              value: skywalking-skywalking-helm-oap.istio-system:11800
+            # - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_ACTIVE
+            #   value: "false"
+            # - name: ROVER_HOST_MAPPING
+            #   value: /host
+            - name: ROVER_LOGGER_LEVEL
+              value: DEBUG
+
+
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_ACTIVE
+              value: "true"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_HAS_ENVOY
+              value: .Pod.HasContainer "istio-proxy"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_CONTAINER_IS_ENVOY
+              value: eq .Container.Name "istio-proxy"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_LAYER
+              value: MESH_DP
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_SERVICE_NAME
+              value: '{{.Pod.Namespace}}::{{.Pod.LabelValue "service.istio.io/canonical-name,app.kubernetes.io/name,app" }}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_INSTANCE_NAME
+              value: '{{.Pod.Name}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_PROCESS_NAME
+              value: '{{.Process.ExeName}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_ENVOY_LABELS
+              value: mesh-envoy
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_ACTIVE
+              value: "true"
+            
+
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_HAS_ENVOY
+              value: .Pod.HasContainer "istio-proxy"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_CONTAINER_NOT_ENVOY
+              value: ne .Container.Name "istio-proxy"
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_LAYER
+              value: MESH
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_SERVICE_NAME
+              value: '{{.Pod.Namespace}}::{{.Pod.LabelValue "service.istio.io/canonical-name,app.kubernetes.io/name,app" }}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_INSTANCE_NAME
+              value: '{{.Pod.Name}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_PROCESS_NAME
+              value: '{{.Process.ExeName}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_ISTIO_APPLICATION_LABELS
+              value: mesh-application
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_ACTIVE
+              value: "true"
+
+            
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_HAS_SERVICE
+              value: .Pod.HasServiceName
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_LAYER
+              value: K8S_SERVICE
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_NAME
+              value: '{{.Pod.Namespace}}::{{.Pod.ServiceName}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_INSTANCE_NAME
+              value: '{{.Pod.Name}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_PROCESS_NAME
+              value: '{{.Process.ExeName}}'
+            - name: ROVER_PROCESS_DISCOVERY_KUBERNETES_ANALYZER_K8S_SERVICE_LABLES
+              value: k8s-service
+            
+
+            - name: ROVER_PROFILING_ACTIVE
+              value: "true"
+            - name: ROVER_PROFILING_CHECK_INTERVAL
+              value: '10s'
+            - name: ROVER_PROFILING_FLUSH_INTERVAL
+              value: '5s'
+            - name: ROVER_PROFILING_TASK_NETWORK_TOPOLOGY_REPORT_INTERVAL
+              value: '2s'
+            - name: ROVER_PROFILING_TASK_NETWORK_TOPOLOGY_METER_PREFIX
+              value: rover_net_p
+            - name: ROVER_PROFILING_TASK_NETWORK_PROTOCOL_ANALYZE_PER_CPU_BUFFER
+              value: '400KB'
+            - name: ROVER_PROFILING_TASK_NETWORK_PROTOCOL_ANALYZE_PARALLELS
+              value: '2'
+            - name: ROVER_PROFILING_TASK_NETWORK_PROTOCOL_ANALYZE_QUEUE_SIZE
+              value: "5000"
+            - name: ROVER_PROFILING_TASK_NETWORK_PROTOCOL_ANALYZE_SAMPLING_HTTP_DEFAULT_REQUEST_ENCODING
+              value: UTF-8
+            - name: ROVER_PROFILING_TASK_NETWORK_PROTOCOL_ANALYZE_SAMPLING_HTTP_DEFAULT_RESPONSE_ENCODING
+              value: UTF-8
+          
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # dnsPolicy: ClusterFirst
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+            type: Directory
+      # volumes:
+      # - configMap:
+      #     defaultMode: 420
+      #     name: skywalking-oap-cm-override
+      #   name: skywalking-oap-override
+      # - name: cert
+      #   secret:
+      #     defaultMode: 420
+      #     secretName: skywalking-storage
